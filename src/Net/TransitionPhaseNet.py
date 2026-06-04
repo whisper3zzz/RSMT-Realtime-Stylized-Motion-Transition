@@ -12,15 +12,21 @@ from src.Net.CommonOperation import CommonOperator
 from src.geometry.quaternions import normalized_or6d
 from src.geometry.quaternions import quat_to_or6D, or6d_to_quat
 from src.utils.BVH_mod import Skeleton, find_secondary_axis
+from src.utils.torch_device import get_default_device
 
 
 def eval_sample(model, X, Q,A,S,tar_pos,tar_quat, x_mean, x_std, pos_offset, skeleton: Skeleton, length, param):
     # FOR EXAMPLE
+    device = get_default_device()
     model = model.eval()
-    model = model.cuda()
-    quats = Q
-    offsets = pos_offset
-    hip_pos = X
+    model = model.to(device)
+    quats = Q.to(device)
+    offsets = pos_offset.to(device)
+    hip_pos = X.to(device)
+    A = A.to(device)
+    S = S.to(device)
+    tar_pos = tar_pos.to(device)
+    tar_quat = tar_quat.to(device)
     dict = {"hip_pos": X, 'offsets': Q, 'quats': Q}
     gp, gq = skeleton.forward_kinematics(quats, offsets, hip_pos)
     loc_rot = quat_to_or6D(gq)
@@ -31,23 +37,23 @@ def eval_sample(model, X, Q,A,S,tar_pos,tar_quat, x_mean, x_std, pos_offset, ske
     noise = torch.zeros(size=(gp.shape[0], 512), dtype=gp.dtype, device=gp.device)
     edge_len = torch.norm(offsets[:, 1:], dim=-1, keepdim=True)
     tar_quat = quat_to_or6D(tar_quat)
-    target_style = model.get_film_code(tar_pos.cuda(),tar_quat.cuda())
+    target_style = model.get_film_code(tar_pos, tar_quat)
     F = S[:, 1:] - S[:, :-1]
     F = model.phase_op.remove_F_discontiny(F)
     F = F / model.phase_op.dt
     phases = model.phase_op.phaseManifold(A, S)
     if(model.predict_phase==True):
-     pred_pos, pred_rot, pred_phase, _,_ = model.shift_running(gp.cuda(), loc_rot.cuda(), phases.cuda(), A.cuda(), F.cuda(), target_style, None,
+     pred_pos, pred_rot, pred_phase, _,_ = model.shift_running(gp, loc_rot, phases, A, F, target_style, None,
                                                                start_id=10,
                                                                target_id=target_id, length=length,
                                                                phase_schedule=1.)
     else:
-        pred_pos, pred_rot, pred_phase, _ = model.shift_running(gp.cuda(), loc_rot.cuda(), phases.cuda(), A.cuda(),
-                                                                   F.cuda(), target_style, None,
+        pred_pos, pred_rot, pred_phase, _ = model.shift_running(gp, loc_rot, phases, A,
+                                                                   F, target_style, None,
                                                                    start_id=10,
                                                                    target_id=target_id, length=length,
                                                                    phase_schedule=1.)
-    pred_pos,pred_rot = pred_pos.cpu(),pred_rot.cpu()
+    pred_pos,pred_rot = pred_pos.to(device),pred_rot.to(device)
     rot_pos = model.rot_to_pos(pred_rot, offsets, pred_pos[:, :, 0:1])
     pred_pos[:, :, model.rot_rep_idx] = rot_pos[:, :, model.rot_rep_idx]
     edge_len = torch.norm(offsets[:, 1:], dim=-1, keepdim=True)
@@ -55,8 +61,8 @@ def eval_sample(model, X, Q,A,S,tar_pos,tar_quat, x_mean, x_std, pos_offset, ske
 
     GQ = skeleton.inverse_pos_to_rot(or6d_to_quat(pred_rot), pred_pos, offsets, find_secondary_axis(offsets))
     GX = skeleton.global_rot_to_global_pos(GQ, offsets, pred_pos[:, :, 0:1, :]).flatten(-2, -1)
-    x_mean = x_mean.view(skeleton.num_joints, 3)
-    x_std = x_std.view(skeleton.num_joints, 3)
+    x_mean = x_mean.to(device).view(skeleton.num_joints, 3)
+    x_std = x_std.to(device).view(skeleton.num_joints, 3)
     GX = (GX - x_mean.flatten(-2, -1)) / x_std.flatten(-2, -1)
     GX = GX.transpose(1, 2)
     return GQ, GX
@@ -746,4 +752,3 @@ class Application_phase(nn.Module):
             batch['local_pos'] = output_pos
             return self._get_transform_ori_motion(batch)
             # output = self.src
-

@@ -113,6 +113,13 @@ class ProjectHygieneTests(unittest.TestCase):
             self.assertNotIn(".cuda(", source)
             self.assertIn("get_default_device", source)
 
+    def test_benchmark_and_model_helpers_use_default_device(self):
+        for script in ["benchmark.py", "src/Net/TransitionPhaseNet.py"]:
+            source = read_text(script)
+
+            self.assertNotIn(".cuda(", source)
+            self.assertIn("get_default_device", source)
+
 
 if __name__ == "__main__":
     unittest.main()

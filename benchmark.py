@@ -15,6 +15,8 @@ import torch
 import numpy as np
 import random
 import torch.nn.functional as F
+from src.utils.torch_device import get_default_device
+
 def load_model(args):
     model_dict, function_dict = {}, {}
     model_dict[args.model_name] = torch.load(args.model_path)
@@ -26,33 +28,38 @@ def load_model(args):
 
 
 def eval_sample(model, X, Q, A, S, tar_pos, tar_quat, pos_offset, skeleton: Skeleton, length, target_id, ifnoise=False):
+    device = get_default_device()
     model = model.eval()
-    model = model.cuda()
-    quats = Q
-    offsets = pos_offset
-    hip_pos = X
+    model = model.to(device)
+    quats = Q.to(device)
+    offsets = pos_offset.to(device)
+    hip_pos = X.to(device)
+    A = A.to(device)
+    S = S.to(device)
+    tar_pos = tar_pos.to(device)
+    tar_quat = tar_quat.to(device)
     gp, gq = skeleton.forward_kinematics(quats, offsets, hip_pos)
     loc_rot = quat_to_or6D(gq)
     if ifnoise:
         noise = None
     else:
-        noise = torch.zeros(size=(gp.shape[0], 512), dtype=gp.dtype, device=gp.device).cuda()
+        noise = torch.zeros(size=(gp.shape[0], 512), dtype=gp.dtype, device=gp.device)
     tar_quat = quat_to_or6D(tar_quat)
-    target_style = model.get_film_code(tar_pos.cuda(), tar_quat.cuda())   # use random style seq
-    # target_style = model.get_film_code(gp.cuda(), loc_rot.cuda())
+    target_style = model.get_film_code(tar_pos, tar_quat)   # use random style seq
+    # target_style = model.get_film_code(gp, loc_rot)
     F = S[:, 1:] - S[:, :-1]
     F = model.phase_op.remove_F_discontiny(F)
     F = F / model.phase_op.dt
     phases = model.phase_op.phaseManifold(A, S)
 
     if(hasattr(model,"predict_phase") and model.predict_phase):
-        pred_pos, pred_rot, pred_phase, _,_ = model.shift_running(gp.cuda(), loc_rot.cuda(), phases.cuda(), A.cuda(),
-                                                            F.cuda(),
+        pred_pos, pred_rot, pred_phase, _,_ = model.shift_running(gp, loc_rot, phases, A,
+                                                            F,
                                                             target_style, noise, start_id=10, target_id=target_id,
                                                             length=length, phase_schedule=1.)
     else:
-        pred_pos, pred_rot, pred_phase, _ = model.shift_running(gp.cuda(), loc_rot.cuda(), phases.cuda(), A.cuda(),
-                                                            F.cuda(),
+        pred_pos, pred_rot, pred_phase, _ = model.shift_running(gp, loc_rot, phases, A,
+                                                            F,
                                                             target_style, noise, start_id=10, target_id=target_id,
                                                             length=length, phase_schedule=1.)
     pred_pos, pred_rot = pred_pos, pred_rot
@@ -466,7 +473,8 @@ def reconstruct_motion(models, function, X, Q, A, S, tar_pos, tar_quat, offsets,
 
     data = {}
 
-    torch.cuda.empty_cache()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
     location_x = condition.x
     duration_t = condition.t
     n_trans = int(condition.length * duration_t)
@@ -608,6 +616,11 @@ def get_vel(pos):
 
 
 def get_gt_latent(style_encoder, rot, pos, batch_size=1000):
+    device = get_default_device()
+    if hasattr(style_encoder, "to"):
+        style_encoder = style_encoder.to(device)
+    rot = rot.to(device)
+    pos = pos.to(device)
     glb_vel, glb_pos, glb_rot, root_rotation = BatchProcessDatav2().forward(rot, pos)
     stard_id = 0
     data_size = glb_vel.shape[0]
@@ -615,9 +628,9 @@ def get_gt_latent(style_encoder, rot, pos, batch_size=1000):
     while stard_id < data_size:
         length = min(batch_size, data_size - stard_id)
         mp_batch = {}
-        mp_batch['glb_rot'] = quat_to_or6D(glb_rot[stard_id: stard_id + length]).cuda()
-        mp_batch['glb_pos'] = glb_pos[stard_id: stard_id + length].cuda()
-        mp_batch['glb_vel'] = glb_vel[stard_id: stard_id + length].cuda()
+        mp_batch['glb_rot'] = quat_to_or6D(glb_rot[stard_id: stard_id + length]).to(device)
+        mp_batch['glb_pos'] = glb_pos[stard_id: stard_id + length].to(device)
+        mp_batch['glb_vel'] = glb_vel[stard_id: stard_id + length].to(device)
         latent = style_encoder.cal_latent(mp_batch).cpu()
         if init:
             output = torch.empty((data_size,) + latent.shape[1:])
@@ -629,6 +642,7 @@ def get_gt_latent(style_encoder, rot, pos, batch_size=1000):
 
 
 def calculate_stat(conditions, dataLoader, data_size, function, models, skeleton, load_from_dict = False,data_name = None, window_size=1500):
+    device = get_default_device()
     ##################################
     # condition{method{data}}
     if load_from_dict:
@@ -667,9 +681,9 @@ def calculate_stat(conditions, dataLoader, data_size, function, models, skeleton
                     local_quat = skeleton.inverse_kinematics_quats(global_quat)
                     local_quat = (remove_quat_discontinuities(local_quat.cpu()))
                     hip_pos = local_pos[:, :, 0:1, :]
-                    data, last_pos, last_rot = reconstruct_motion(models, function, hip_pos.cuda(), local_quat.cuda(),
-                                                                  A.cuda(), S.cuda(), tar_pos.cuda(),
-                                                                  tar_quat.cuda(), batch['offsets'].cuda(), skeleton,
+                    data, last_pos, last_rot = reconstruct_motion(models, function, hip_pos.to(device), local_quat.to(device),
+                                                                  A.to(device), S.to(device), tar_pos.to(device),
+                                                                  tar_quat.to(device), batch['offsets'].to(device), skeleton,
                                                                   condition)
                     t2 = time.time()
 
@@ -681,7 +695,10 @@ def calculate_stat(conditions, dataLoader, data_size, function, models, skeleton
                         batch_size = data[method]['pos'].shape[0]
                         props = list(data[method].keys())
                         for prop in props:
-                            output[method][prop][start_id:start_id + batch_size] = data[method][prop]
+                            value = data[method][prop]
+                            if isinstance(value, torch.Tensor):
+                                value = value.detach().cpu()
+                            output[method][prop][start_id:start_id + batch_size] = value
                             del data[method][prop]
                     print("batch_id : {} - {}".format(start_id, start_id + batch_size))
                     start_id += batch_size
@@ -706,9 +723,9 @@ def calculate_stat(conditions, dataLoader, data_size, function, models, skeleton
                     glb_vel, glb_pos, glb_rot, root_rotation = BatchProcessDatav2().forward(rot, pos)
                     # data[method]["latent"] = glb_vel.flatten(-2,-1).cpu()    # use vel
                     mp_batch = {}
-                    mp_batch['glb_rot'] = quat_to_or6D(glb_rot).cuda()
-                    mp_batch['glb_pos'] = glb_pos.cuda()
-                    mp_batch['glb_vel'] = glb_vel.cuda()
+                    mp_batch['glb_rot'] = quat_to_or6D(glb_rot).to(device)
+                    mp_batch['glb_pos'] = glb_pos.to(device)
+                    mp_batch['glb_vel'] = glb_vel.to(device)
                     # latent = style_encoder.cal_latent(mp_batch).cpu() # use latent
                     # label = style_encoder.cal_label(mp_batch).cpu()
                     # if start_id == 0:
