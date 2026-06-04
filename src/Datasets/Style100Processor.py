@@ -1,3 +1,4 @@
+import os
 import pickle
 
 import numpy as np
@@ -7,6 +8,7 @@ import torch
 from src.Datasets.BaseLoader import BasedLoader, BasedDataProcessor
 from src.utils.BVH_mod import read_bvh
 from src.utils.motion_process import subsample
+from src.utils.torch_device import get_default_device
 
 
 class Swap100StyJoints():
@@ -112,10 +114,17 @@ class StyleLoader():
         pickle.dump(dict, f)
         f.close()
     def load_part_to_binary(self,filename):
-        path = "./"#self.root_dir
-        f = open(path + '/' + filename + ".dat", "rb")
-        stat = pickle.load(f)
-        f.close()
+        candidate_paths = [
+            os.path.join(self.root_dir, filename + ".dat"),
+            os.path.join(".", filename + ".dat"),
+        ]
+        file_path = next((path for path in candidate_paths if os.path.exists(path)), None)
+        if file_path is None:
+            raise FileNotFoundError(
+                "Could not find {}.dat in {}".format(filename, candidate_paths)
+            )
+        with open(file_path, "rb") as f:
+            stat = pickle.load(f)
         return stat
     # dataset: all motions, the motions are splited into windows
     def save_dataset(self,filename):
@@ -177,13 +186,14 @@ class StyleLoader():
         scale = TemporalScale(1.)
 
         def augment_motions(motions):
+            device = get_default_device()
             for style in motions.keys():
                 content_keys = list(motions[style].keys())
                 for content in content_keys:
                     seq = motions[style][content]
-                    quats = torch.from_numpy(seq['quats']).unsqueeze(0).float().cuda()
-                    offsets = torch.from_numpy(seq['offsets']).unsqueeze(0).float().cuda()
-                    hips = torch.from_numpy(seq['hips']).unsqueeze(0).float().cuda()
+                    quats = torch.from_numpy(seq['quats']).unsqueeze(0).float().to(device)
+                    offsets = torch.from_numpy(seq['offsets']).unsqueeze(0).float().to(device)
+                    hips = torch.from_numpy(seq['hips']).unsqueeze(0).float().to(device)
                     # mirror
                     gp,gq = self.skeleton.forward_kinematics(quats,offsets,hips)
                     gp,gq = mirror(gp,gq)
@@ -300,5 +310,3 @@ class StyleLoader():
         f.close()
     def load_skeleton_only(self):
         self._load_skeleton(self.root_dir)
-
-

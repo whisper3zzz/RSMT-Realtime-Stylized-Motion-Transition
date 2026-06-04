@@ -15,6 +15,7 @@ from pytorch_lightning.utilities.seed import seed_everything
 from src.Datasets.BaseLoader import WindowBasedLoader
 from src.Net.StyleVAENet import StyleVAENet
 from src.utils import BVH_mod as BVH
+from src.utils.torch_device import get_default_device
 
 
 def setup_seed(seed:int):
@@ -29,7 +30,9 @@ def detect_nan_par():
     '''track_grad_norm": 'inf'''
     return { "detect_anomaly":True}
 def select_gpu_par():
-    return {"accelerator":'gpu', "auto_select_gpus":True, "devices":-1}
+    if torch.cuda.is_available():
+        return {"accelerator": "gpu", "auto_select_gpus": True, "devices": -1}
+    return {"accelerator": "cpu"}
 
 def create_common_states(prefix:str):
     log_name = prefix+'/'
@@ -62,7 +65,7 @@ def create_common_states(prefix:str):
         else:
             dirs = os.listdir(check_file)
             for dir in dirs:
-                st = "epoch=" + args.epoch + "-step=\d+.ckpt"
+                st = r"epoch=" + args.epoch + r"-step=\d+\.ckpt"
                 out = re.findall(st, dir)
                 if (len(out) > 0):
                     check_file += out[0]
@@ -92,7 +95,6 @@ def training_style100():
     data_set = "style100"
     prefix += "_" + data_set
     args, trainer_dict, resume_from_checkpoint, ckpt_path = create_common_states(prefix)
-    resume_from_checkpoint = None
     loader = WindowBasedLoader(61, 21, 1)
     dt = 1. / 30.
     phase_dim = 10
@@ -115,7 +117,7 @@ def training_style100():
 
             trainer = Trainer(**trainer_dict, max_epochs=10000, reload_dataloaders_every_n_epochs=1,gradient_clip_val=1.0,#**detect_nan_par(),
                               **select_gpu_par(), log_every_n_steps=50,
-                              flush_logs_every_n_steps=100)
+                              flush_logs_every_n_steps=100, resume_from_checkpoint=resume_from_checkpoint)
         trainer.fit(model, datamodule=data_module)
 
     else:
@@ -130,14 +132,14 @@ def training_style100():
         else:
             dirs = os.listdir(check_file)
             for dir in dirs:
-                st = "epoch=" + args.epoch + "-step=\d+.ckpt"
+                st = r"epoch=" + args.epoch + r"-step=\d+\.ckpt"
                 out = re.findall(st, dir)
                 if (len(out) > 0):
                     check_file += out[0]
                     print(check_file)
                     break
         model = StyleVAENet.load_from_checkpoint(check_file, moe_decoder=None,pose_channels=6,net_mode=net_mode,strict=False)
-        model = model.cuda()
+        model = model.to(get_default_device())
         src_motion = data_module.test_set.dataset["HighKnees"][0]
         source = BVH.read_bvh("source.bvh")
         '''check if space can produce netural space: encoding=False, style=kick'''
@@ -158,5 +160,3 @@ def training_style100():
 if __name__ == '__main__':
     setup_seed(3407)
     training_style100()
-
-

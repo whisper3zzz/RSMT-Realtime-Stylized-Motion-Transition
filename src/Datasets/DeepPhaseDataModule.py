@@ -10,6 +10,7 @@ from src.Datasets.BaseDataSet import StreamDataSetHelper
 from src.Datasets.BaseLoader import BasedDataProcessor
 from src.Datasets.BatchProcessor import BatchProcessData, BatchProcessDatav2
 from src.Datasets.Style100Processor import StyleLoader
+from src.utils.torch_device import get_default_device
 
 
 class DeepPhaseProcessor(BasedDataProcessor):
@@ -18,9 +19,10 @@ class DeepPhaseProcessor(BasedDataProcessor):
         self.process = BatchProcessData()
         self.dt = dt
     def gpu_fk(self,offsets,hip_pos,local_quat,skeleton):
-        quat = torch.from_numpy(local_quat).float().cuda()
-        offsets = torch.from_numpy(offsets).float().cuda()
-        hip_pos = torch.from_numpy(hip_pos).float().cuda()
+        device = get_default_device()
+        quat = torch.from_numpy(local_quat).float().to(device)
+        offsets = torch.from_numpy(offsets).float().to(device)
+        hip_pos = torch.from_numpy(hip_pos).float().to(device)
         gp,gq = skeleton.forward_kinematics(quat,offsets,hip_pos)
 
         return gp,gq[...,0:1,:]
@@ -59,9 +61,10 @@ class DeepPhaseProcessorv2(BasedDataProcessor):
         self.process = BatchProcessDatav2()
         self.dt = dt
     def gpu_fk(self,offsets,hip_pos,local_quat,skeleton):
-        quat = torch.from_numpy(local_quat).float().cuda()
-        offsets = torch.from_numpy(offsets).float().cuda()
-        hip_pos = torch.from_numpy(hip_pos).float().cuda()
+        device = get_default_device()
+        quat = torch.from_numpy(local_quat).float().to(device)
+        offsets = torch.from_numpy(offsets).float().to(device)
+        hip_pos = torch.from_numpy(hip_pos).float().to(device)
         gp,gq = skeleton.forward_kinematics(quat,offsets,hip_pos)
 
         return gp,gq[...,0:1,:]

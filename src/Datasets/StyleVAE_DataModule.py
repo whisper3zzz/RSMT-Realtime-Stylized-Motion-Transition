@@ -9,6 +9,7 @@ from src.Datasets.BatchProcessor import BatchRotateYCenterXZ
 from src.Datasets.Style100Processor import StyleLoader
 from src.Datasets.augmentation import BatchMirror
 from src.Module.PhaseModule import PhaseOperator
+from src.utils.torch_device import get_default_device
 
 
 class Style100Dataset_phase(torch.utils.data.Dataset):
@@ -60,6 +61,7 @@ class Style100Dataset_phase(torch.utils.data.Dataset):
 
 
     def get_style_batch(self,style,style_id,batch_size):
+        device = get_default_device()
         motions = self.dataset[style]
         length = len(motions)
         idx = np.arange(0,length)
@@ -67,8 +69,8 @@ class Style100Dataset_phase(torch.utils.data.Dataset):
         sub_idx = idx[:batch_size]
         sub_motions = [motions[j] for j in sub_idx]
         for i in range(len(sub_motions)):
-            dict = {key:torch.from_numpy(sub_motions[i][3][key]).unsqueeze(0).cuda() for key in sub_motions[i][3].keys()}
-            sub_motions[i] = [torch.from_numpy(sub_motions[i][j]).unsqueeze(0).cuda() for j in range(3)]+[dict]
+            dict = {key:torch.from_numpy(sub_motions[i][3][key]).unsqueeze(0).to(device) for key in sub_motions[i][3].keys()}
+            sub_motions[i] = [torch.from_numpy(sub_motions[i][j]).unsqueeze(0).to(device) for j in range(3)]+[dict]
         return {"data":sub_motions,'sty':style_id}
     def expand_(self):
         for style in self.dataset:
@@ -240,5 +242,4 @@ class StyleVAE_DataModule(pl.LightningDataModule):
         return {"local_pos": local_pos, "local_rot": local_rot, "offsets": offsets, "label": sty, "phase": phase,'A':A,'S':S,"sty_pos":style_gp,"sty_rot":style_gq}
     def on_after_batch_transfer(self, batch, dataloader_idx: int) :
         return self.transfer_mannual(batch,dataloader_idx,self.use_phase,use_sty=self.use_sty)
-
 

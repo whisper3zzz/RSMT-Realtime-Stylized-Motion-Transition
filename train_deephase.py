@@ -15,6 +15,7 @@ from src.Net.DeepPhaseNet import DeepPhaseNet, Application
 from src.utils import BVH_mod as BVH
 from src.utils.locate_model import locate_model
 from src.utils.motion_process import subsample
+from src.utils.torch_device import get_default_device
 
 
 #from src.Datasets.DataSetProperty import lafan1_property,cmu_property
@@ -29,7 +30,9 @@ def detect_nan_par():
     '''track_grad_norm": 'inf'''
     return { "detect_anomaly":True}
 def select_gpu_par():
-    return {"accelerator":'gpu', "auto_select_gpus":True, "devices":-1}
+    if torch.cuda.is_available():
+        return {"accelerator": "gpu", "auto_select_gpus": True, "devices": -1}
+    return {"accelerator": "cpu"}
 
 def create_common_states(prefix:str):
     log_name = prefix+'/'
@@ -110,7 +113,7 @@ def training_style100():
         modelfile = locate_model(check_file, args.epoch)
 
         model = DeepPhaseNet.load_from_checkpoint(modelfile)
-        model = model.cuda()
+        model = model.to(get_default_device())
 
         data_module.setup()
 
@@ -133,5 +136,3 @@ def readBVH(filename,dataset_property):
 if __name__ == '__main__':
     setup_seed(3407)
     training_style100()
-
-

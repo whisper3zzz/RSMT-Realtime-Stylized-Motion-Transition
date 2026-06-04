@@ -13,6 +13,7 @@ from src.Datasets.BaseLoader import WindowBasedLoader
 from src.Datasets.Style100Processor import StyleLoader, Swap100StyJoints
 from src.utils import BVH_mod as BVH
 from src.utils.motion_process import subsample
+from src.utils.torch_device import get_default_device
 
 
 def setup_seed(seed:int):
@@ -27,7 +28,9 @@ def detect_nan_par():
     '''track_grad_norm": 'inf'''
     return { "detect_anomaly":True}
 def select_gpu_par():
-    return {"accelerator":'gpu', "auto_select_gpus":True, "devices":-1}
+    if torch.cuda.is_available():
+        return {"accelerator": "gpu", "auto_select_gpus": True, "devices": -1}
+    return {"accelerator": "cpu"}
 
 def create_common_states(prefix:str):
     log_name = prefix+'/'
@@ -64,7 +67,7 @@ def create_common_states(prefix:str):
         else:
             dirs = os.listdir(check_file)
             for dir in dirs:
-                st = "epoch=" + args.epoch + "-step=\d+.ckpt"
+                st = r"epoch=" + args.epoch + r"-step=\d+\.ckpt"
                 out = re.findall(st, dir)
                 if (len(out) > 0):
                     check_file += out[0]
@@ -154,7 +157,7 @@ def training_style100_phase():
         else:
             dirs = os.listdir(check_file)
             for dir in dirs:
-                st = "epoch=" + args.epoch + "-step=\d+.ckpt"
+                st = r"epoch=" + args.epoch + r"-step=\d+\.ckpt"
                 out = re.findall(st, dir)
                 if (len(out) > 0):
                     check_file += out[0]
@@ -162,7 +165,7 @@ def training_style100_phase():
                     break
         model = TransitionNet_phase.load_from_checkpoint(check_file, moe_decoder=moe_net, pose_channels=9,phase_dim=phase_dim,
                                dt=dt,mode='fine_tune',strict=False)
-        model = model.cuda()
+        model = model.to(get_default_device())
         data_module.mirror = 0
         app = Application_phase(model, data_module)
         model.eval()
@@ -190,5 +193,3 @@ def training_style100_phase():
 if __name__ == '__main__':
     setup_seed(3407)
     training_style100_phase()
-
-

@@ -95,7 +95,7 @@
   After training, you can validate the model by running:
 
   ```bash
-  python train_trainsitionNet.py --test --moe_model YOUR_MANIFOLD_MODEL --version YOUR_VERSION --epoch YOUR_EPOCH
+  python train_transitionNet.py --test --moe_model YOUR_MANIFOLD_MODEL --version YOUR_VERSION --epoch YOUR_EPOCH
   ```
 
   The output result is `test_net.bvh`.
@@ -117,7 +117,7 @@
   Then run benchmarks with:
 
   ```bash
-  python benchmarks.py --model_path 
+  python benchmark.py --model_path YOUR_TRANSITION_MODEL_PATH
   ```
 
   ### General Applications

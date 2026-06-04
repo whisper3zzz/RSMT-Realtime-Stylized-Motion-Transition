@@ -1,17 +1,20 @@
+from argparse import ArgumentParser
+
 import torch
 from pytorch3d.transforms import quaternion_apply, quaternion_multiply, quaternion_invert
 from src.Datasets.Style100Processor import StyleLoader
 from src.geometry.quaternions import or6d_to_quat, quat_to_or6D, from_to_1_0_0
 from src.utils import BVH_mod as BVH
 from src.utils.BVH_mod import Skeleton, find_secondary_axis
+from src.utils.torch_device import get_default_device
 
 
-def load_model():
-    model = torch.load('./results/Transitionv2_style100/myResults/141/m_save_model_198')
+def load_model(model_path):
+    model = torch.load(model_path)
     return model
-def load_dataSet():
+def load_dataSet(dataset_suffix):
     loader = StyleLoader()
-    loader.load_dataset("+phase_gv10")
+    loader.load_dataset(dataset_suffix)
     return loader
 class BatchRotateYCenterXZ(torch.nn.Module):
     def __init__(self):
@@ -45,21 +48,24 @@ class TransformSeq():
         return glb_pos,glb_rot
 class RunningLongSeq():
     def __init__(self,model,X,Q,A,S,tar_X,tar_Q,pos_offset,skeleton):
+        self.device = get_default_device()
         self.window = 60
         self.source_idx = 0
         self.out_idx = 0
-        self.X = X.cuda()
-        self.Q = Q.cuda()
+        self.X = X.to(self.device)
+        self.Q = Q.to(self.device)
 
-        self.pos_offset = pos_offset.cuda()
-        self.tar_pos, self.tar_rot = skeleton.forward_kinematics(tar_Q[:, :120].cuda(),  self.pos_offset, tar_X[:, :120].cuda())
+        self.pos_offset = pos_offset.to(self.device)
+        self.tar_pos, self.tar_rot = skeleton.forward_kinematics(
+            tar_Q[:, :120].to(self.device), self.pos_offset, tar_X[:, :120].to(self.device)
+        )
         self.skeleton = skeleton
         self.transform = TransformSeq()
-        self.model = model.cuda()
-        self.phases = model.phase_op.phaseManifold(A, S)
-        self.outX = X[:,:10].cuda()
-        self.outQ = Q[:,:10].cuda()
-        self.outPhase = self.phases[:,:10].cuda()
+        self.model = model.to(self.device)
+        self.phases = model.phase_op.phaseManifold(A.to(self.device), S.to(self.device))
+        self.outX = X[:,:10].to(self.device)
+        self.outQ = Q[:,:10].to(self.device)
+        self.outPhase = self.phases[:,:10].to(self.device)
 
         tar_id = [50,90,130,170,210,250,290,330]
         self.time = [40,40,40,40,40,80,40,40]
@@ -112,7 +118,8 @@ class RunningLongSeq():
 
 def synthesize(model, gp, gq, phases, tar_pos, tar_quat, pos_offset, skeleton: Skeleton, length, target_id, ifnoise=False):
     model = model.eval()
-    model = model.cuda()
+    device = gp.device
+    model = model.to(device)
     #quats = Q
     offsets = pos_offset
   #  hip_pos = X
@@ -121,15 +128,15 @@ def synthesize(model, gp, gq, phases, tar_pos, tar_quat, pos_offset, skeleton: S
     if ifnoise:
         noise = None
     else:
-        noise = torch.zeros(size=(gp.shape[0], 512), dtype=gp.dtype, device=gp.device).cuda()
+        noise = torch.zeros(size=(gp.shape[0], 512), dtype=gp.dtype, device=device)
     tar_quat = quat_to_or6D(tar_quat)
-    target_style = model.get_film_code(tar_pos.cuda(), tar_quat.cuda())  # use random style seq
-    # target_style = model.get_film_code(gp.cuda(), loc_rot.cuda())
+    target_style = model.get_film_code(tar_pos.to(device), tar_quat.to(device))  # use random style seq
+    # target_style = model.get_film_code(gp.to(device), loc_rot.to(device))
    # F = S[:, 1:] - S[:, :-1]
   #  F = model.phase_op.remove_F_discontiny(F)
    # F = F / model.phase_op.dt
    # phases = model.phase_op.phaseManifold(A, S)
-    pred_pos, pred_rot, pred_phase, _ = model.shift_running(gp.cuda(), loc_rot.cuda(), phases.cuda(), None,
+    pred_pos, pred_rot, pred_phase, _ = model.shift_running(gp.to(device), loc_rot.to(device), phases.to(device), None,
                                                             None,
                                                             target_style, noise, start_id=10, target_id=target_id,
                                                             length=length, phase_schedule=1.)
@@ -146,9 +153,18 @@ def synthesize(model, gp, gq, phases, tar_pos, tar_quat, pos_offset, skeleton: S
 
 
 if __name__ =="__main__":
-    model = load_model()
-    loader = load_dataSet()
-    anim = BVH.read_bvh("source.bvh")
+    parser = ArgumentParser()
+    parser.add_argument("--model_path", type=str, default="./results/Transitionv2_style100/myResults/141/m_save_model_198")
+    parser.add_argument("--dataset_suffix", type=str, default="+phase_gv10")
+    parser.add_argument("--source_bvh", type=str, default="source.bvh")
+    parser.add_argument("--source_output", type=str, default="source.bvh")
+    parser.add_argument("--result_output", type=str, default="results.bvh")
+    parser.add_argument("--target_output", type=str, default="target.bvh")
+    args = parser.parse_args()
+
+    model = load_model(args.model_path)
+    loader = load_dataSet(args.dataset_suffix)
+    anim = BVH.read_bvh(args.source_bvh)
     motions = loader.train_motions['LeftHop']["BR"]
     tar_motions = loader.train_motions['Neutral']["FR"]
 
@@ -166,10 +182,8 @@ if __name__ =="__main__":
         running_machine = RunningLongSeq(model,X,Q,A,S,X,Q,pos_offset,anim.skeleton)
         running_machine.iteration()
         anim.hip_pos,anim.quats = running_machine.get_source()
-        BVH.save_bvh("source.bvh",anim)
+        BVH.save_bvh(args.source_output,anim)
         anim.hip_pos,anim.quats = running_machine.get_results()
-        BVH.save_bvh("results.bvh",anim)
+        BVH.save_bvh(args.result_output,anim)
         anim.hip_pos, anim.quats = running_machine.get_target()
-        BVH.save_bvh("target.bvh", anim)
-
-
+        BVH.save_bvh(args.target_output, anim)

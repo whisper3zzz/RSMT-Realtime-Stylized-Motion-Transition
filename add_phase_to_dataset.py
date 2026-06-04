@@ -5,6 +5,7 @@ from src.Datasets.DeepPhaseDataModule import DeephaseDataSet, Style100DataModule
 from src.Datasets.Style100Processor import StyleLoader
 from src.Net.DeepPhaseNet import Application
 from src.Net.DeepPhaseNet import DeepPhaseNet
+from src.utils.torch_device import get_default_device
 
 
 class PhaseMotionStyle100Processor(mBaseLoader.BasedDataProcessor):
@@ -17,6 +18,7 @@ class PhaseMotionStyle100Processor(mBaseLoader.BasedDataProcessor):
         self.window = window
         self.model = DeepPhaseNet.load_from_checkpoint(model_path,style_loader=None)
     def __call__(self, dict,skeleton,motion_datalaoder= None):
+        device = get_default_device()
         offsets, hip_pos, quats = dict["offsets"],dict["hip_pos"],dict["quats"]
         style_loader = StyleLoader()
         data_module = Style100DataModule(batch_size=32, shuffle=True, data_loader=style_loader, window_size=self.window)
@@ -26,7 +28,7 @@ class PhaseMotionStyle100Processor(mBaseLoader.BasedDataProcessor):
         self.app = app.float()
 
         gv = self.processor(dict,skeleton,style_loader)['gv']
-        gv = torch.from_numpy(gv).cuda()
+        gv = torch.from_numpy(gv).to(device)
         phase = {key:[] for key in ["A","S","B","F"]}
         h=[]
         q=[]
@@ -39,7 +41,7 @@ class PhaseMotionStyle100Processor(mBaseLoader.BasedDataProcessor):
             print("dataset length: {}".format(len(dataset)))
             if(len(dataset)==0):
                 continue
-            self.app.Net.to("cuda")
+            self.app.Net.to(device)
             phases = self.app.calculate_statistic_for_dataset(dataset)
             key_frame = self.window // 2   # 61th or 31th,
 
