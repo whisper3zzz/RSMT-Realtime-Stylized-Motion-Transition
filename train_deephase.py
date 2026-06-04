@@ -13,6 +13,7 @@ from src.Datasets.DeepPhaseDataModule import Style100DataModule
 from src.Datasets.Style100Processor import StyleLoader, Swap100StyJoints
 from src.Net.DeepPhaseNet import DeepPhaseNet, Application
 from src.utils import BVH_mod as BVH
+from src.utils.lightning_compat import create_trainer, fit_with_checkpoint
 from src.utils.locate_model import locate_model
 from src.utils.motion_process import subsample
 from src.utils.torch_device import get_default_device
@@ -31,7 +32,7 @@ def detect_nan_par():
     return { "detect_anomaly":True}
 def select_gpu_par():
     if torch.cuda.is_available():
-        return {"accelerator": "gpu", "auto_select_gpus": True, "devices": -1}
+        return {"accelerator": "gpu", "devices": -1}
     return {"accelerator": "cpu"}
 
 def create_common_states(prefix:str):
@@ -95,15 +96,14 @@ def training_style100():
     model = DeepPhaseNet(args.n_phases, data_module.skeleton, window, 1.0 / frequency,batch_size=batch_size)  # or model = pl.LightningModule().load_from_checkpoint(PATH)
     if (args.test == False):
         if (args.dev_run):
-            trainer = Trainer(**trainer_dict, **test_model(),
+            trainer = create_trainer(Trainer, **trainer_dict, **test_model(),
                               **select_gpu_par(), precision=32,
-                              log_every_n_steps=50, flush_logs_every_n_steps=500, max_epochs=30,
-                              weights_summary='full', auto_lr_find=True)
+                              log_every_n_steps=50, max_epochs=30)
         else:
 
-            trainer = Trainer(**trainer_dict, max_epochs=500, **select_gpu_par(), log_every_n_steps=50,#limit_train_batches=0.1,
-                              flush_logs_every_n_steps=500, resume_from_checkpoint=resume_from_checkpoint)
-        trainer.fit(model, datamodule=data_module)
+            trainer = create_trainer(Trainer, checkpoint_path=resume_from_checkpoint,
+                              **trainer_dict, max_epochs=500, **select_gpu_par(), log_every_n_steps=50)#limit_train_batches=0.1,
+        fit_with_checkpoint(trainer, model, data_module, resume_from_checkpoint)
     # trainer.test(ckpt_path='best')
     else:
         anim = read_style_bvh("WildArms", "FW",[509,1009])

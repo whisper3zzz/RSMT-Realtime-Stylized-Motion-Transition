@@ -15,6 +15,7 @@ from pytorch_lightning.utilities.seed import seed_everything
 from src.Datasets.BaseLoader import WindowBasedLoader
 from src.Net.StyleVAENet import StyleVAENet
 from src.utils import BVH_mod as BVH
+from src.utils.lightning_compat import create_trainer, fit_with_checkpoint
 from src.utils.torch_device import get_default_device
 
 
@@ -31,7 +32,7 @@ def detect_nan_par():
     return { "detect_anomaly":True}
 def select_gpu_par():
     if torch.cuda.is_available():
-        return {"accelerator": "gpu", "auto_select_gpus": True, "devices": -1}
+        return {"accelerator": "gpu", "devices": -1}
     return {"accelerator": "cpu"}
 
 def create_common_states(prefix:str):
@@ -109,16 +110,16 @@ def training_style100():
         data_module = StyleVAE_DataModule(style_loader, phase_file + loader.get_postfix_str(),style_file_name=None, dt=dt, batch_size=batch_size, mirror=0.0)  # when apply phase, should avoid mirror
         model = StyleVAENet(data_module.skeleton,  phase_dim=phase_dim, latent_size=latent_size,batch_size=batch_size,mode='pretrain',net_mode=net_mode)
         if (args.dev_run):
-            trainer = Trainer(**trainer_dict, **test_model(),
+            trainer = create_trainer(Trainer, **trainer_dict, **test_model(),
                               **select_gpu_par(), precision=32, reload_dataloaders_every_n_epochs=1,#gradient_clip_val=1.0,#**detect_nan_par(),
-                              log_every_n_steps=5, flush_logs_every_n_steps=10,
-                              weights_summary='full')
+                              log_every_n_steps=5)
         else:
 
-            trainer = Trainer(**trainer_dict, max_epochs=10000, reload_dataloaders_every_n_epochs=1,gradient_clip_val=1.0,#**detect_nan_par(),
+            trainer = create_trainer(Trainer, checkpoint_path=resume_from_checkpoint,
+                              **trainer_dict, max_epochs=10000, reload_dataloaders_every_n_epochs=1,gradient_clip_val=1.0,#**detect_nan_par(),
                               **select_gpu_par(), log_every_n_steps=50,
-                              flush_logs_every_n_steps=100, resume_from_checkpoint=resume_from_checkpoint)
-        trainer.fit(model, datamodule=data_module)
+                              )
+        fit_with_checkpoint(trainer, model, data_module, resume_from_checkpoint)
 
     else:
 

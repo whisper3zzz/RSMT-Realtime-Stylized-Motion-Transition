@@ -6,6 +6,20 @@
 
   Our RSMT model is based on the 100STYLE dataset with the phase, which can be obtained by the trained phase manifold. You can download the 100STYLE dataset from https://www.ianxmason.com/100style/. The downloaded file should be set in `MotionData/100STYLE`. Before training our RSMT model, we show how to preprocess the 100STYLE dataset, then train the phase manifold, generate the phase vectors for all motion sequences, and lastly train the RSMT model, which consists of two components: a manifold and a sampler.
 
+  ## Setup Check
+
+  Before running preprocessing, training, or benchmarks, check that the Python environment and expected 100STYLE files are present:
+
+  ```bash
+  python scripts/check_setup.py
+  ```
+
+  To run the lightweight repository verification suite without requiring the full dataset or deep-learning dependencies, use:
+
+  ```bash
+  python scripts/smoke_verify.py
+  ```
+
   ## Dataset Preprocessing
 
   To use the pre-trained 100STYLE dataset, first, download the 100STYLE folder and save it in `./MotionData/100STYLE`. Next, preprocess the 100STYLE dataset by running the following command in your terminal:

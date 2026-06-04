@@ -12,6 +12,7 @@ from pytorch_lightning.utilities.seed import seed_everything
 from src.Datasets.BaseLoader import WindowBasedLoader
 from src.Datasets.Style100Processor import StyleLoader, Swap100StyJoints
 from src.utils import BVH_mod as BVH
+from src.utils.lightning_compat import create_trainer, fit_with_checkpoint
 from src.utils.motion_process import subsample
 from src.utils.torch_device import get_default_device
 
@@ -29,7 +30,7 @@ def detect_nan_par():
     return { "detect_anomaly":True}
 def select_gpu_par():
     if torch.cuda.is_available():
-        return {"accelerator": "gpu", "auto_select_gpus": True, "devices": -1}
+        return {"accelerator": "gpu", "devices": -1}
     return {"accelerator": "cpu"}
 
 def create_common_states(prefix:str):
@@ -88,7 +89,7 @@ def create_common_states(prefix:str):
         "profiler":profiler,
         "logger":tb_logger
     }
-    return args,trainer_dict,load_ckpt_path
+    return args,trainer_dict,resume_from_checkpoint,load_ckpt_path
 def read_style_bvh(style,content,clip=None):
     swap_joints = Swap100StyJoints()
     anim = BVH.read_bvh(os.path.join("MotionData/100STYLE/",style,style+"_"+content+".bvh"),remove_joints=swap_joints)
@@ -104,7 +105,7 @@ def training_style100_phase():
     prefix = "Transitionv2"
     data_set = "style100"
     prefix += "_" + data_set
-    args, trainer_dict, ckpt_path = create_common_states(prefix)
+    args, trainer_dict, resume_from_checkpoint, ckpt_path = create_common_states(prefix)
     moe_net = torch.load(args.moe_model)
 
     if(args.pretrained==True):
@@ -134,16 +135,16 @@ def training_style100_phase():
                                dt=dt,mode=mode,pretrained_model=pre_trained,predict_phase=args.predict_phase)
 
         if (args.dev_run):
-            trainer = Trainer(**trainer_dict, **test_model(),
+            trainer = create_trainer(Trainer, **trainer_dict, **test_model(),
                               **select_gpu_par(), precision=32,reload_dataloaders_every_n_epochs=1,
-                              log_every_n_steps=5, flush_logs_every_n_steps=10,
-                              weights_summary='full')
+                              log_every_n_steps=5)
         else:
 
-            trainer = Trainer(**trainer_dict, max_epochs=10000,reload_dataloaders_every_n_epochs=1,gradient_clip_val=1.0,
+            trainer = create_trainer(Trainer, checkpoint_path=resume_from_checkpoint,
+                              **trainer_dict, max_epochs=10000,reload_dataloaders_every_n_epochs=1,gradient_clip_val=1.0,
                               **select_gpu_par(), log_every_n_steps=50,check_val_every_n_epoch=2,
-                              flush_logs_every_n_steps=100)
-        trainer.fit(model, datamodule=data_module)
+                              )
+        fit_with_checkpoint(trainer, model, data_module, resume_from_checkpoint)
     else:
 
         style_loader = StyleLoader()

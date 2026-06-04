@@ -1,3 +1,4 @@
+from argparse import ArgumentParser
 import os
 
 import matplotlib.pyplot as plt
@@ -13,6 +14,7 @@ from src.Net.TransitionPhaseNet import TransitionNet_phase
 from src.geometry.quaternions import quat_inv, quat_mul, quat_mul_vec, from_to_1_0_0
 from src.utils.BVH_mod import Skeleton
 from src.utils.np_vector import interpolate_local, remove_quat_discontinuities
+from src.utils.torch_device import get_default_device
 
 
 class BatchRotateYCenterXZ(torch.nn.Module):
@@ -120,11 +122,16 @@ def eval_sample(model, X, Q, x_mean, x_std, pos_offset, skeleton: Skeleton, leng
     return GQ, GX
 
 
-def load_model():
+def clear_cuda_cache():
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
+def load_model(model_path, model_name):
     model_dict, function_dict, param_dict = {}, {}, {}
 
-    model_dict['Transition'] = torch.load('./results/Transitionv2_style100/myResults/117/m_save_model_205')
-    function_dict['Transition'] = src.Net.TransitionPhaseNet.eval_sample
+    model_dict[model_name] = torch.load(model_path, map_location=get_default_device())
+    function_dict[model_name] = src.Net.TransitionPhaseNet.eval_sample
     return model_dict, function_dict, param_dict
 
 
@@ -270,7 +277,7 @@ def benchmark_interpolation(models, function, params, X, Q,A,S,tar_pos,tar_quat,
 
     for n_trans in trans_lengths:
 
-        torch.cuda.empty_cache()
+        clear_cuda_cache()
         print('Computing errors for transition length = {}...'.format(n_trans))
         target_id = n_trans + n_past
 
@@ -469,7 +476,7 @@ def print_result(res_quat, res_pos, res_npss, res_contact, trans_lengths, out_pa
         res_txt_file.close()
 
 from src.Datasets.Style100Processor import StyleLoader
-def benchmarks():
+def benchmarks(args):
     loader = mBaseLoader.WindowBasedLoader(65, 25, 1)
     # motionloader = mBaseLoader.MotionDataLoader(lafan1_property)
     style_loader = StyleLoader()
@@ -490,7 +497,7 @@ def benchmarks():
     num_joints = 22
 
     benchmarks = ["gq", "gp", "npss", "contact"]
-    models, function, params = load_model()
+    models, function, params = load_model(args.model_path, args.model_name)
     trans_lengths = [5, 15, 30]
     res_quat = None
 
@@ -585,7 +592,7 @@ def duration_interpolation(models, function, params, X, Q,A,S,tar_pos,tar_quat, 
     n_trans = 30
     for length in trans_lengths:
 
-        torch.cuda.empty_cache()
+        clear_cuda_cache()
         print('Computing errors for transition length = {}...'.format(length))
         target_id = n_trans + n_past
 
@@ -676,7 +683,7 @@ def duration_interpolation(models, function, params, X, Q,A,S,tar_pos,tar_quat, 
 
     return  res_contact
 
-def duration_test():
+def duration_test(args):
     loader = mBaseLoader.WindowBasedLoader(65, 25, 1)
     # motionloader = mBaseLoader.MotionDataLoader(lafan1_property)
     style_loader = StyleLoader()
@@ -697,7 +704,7 @@ def duration_test():
 
     benchmarks = ["contact"]
 
-    models, function, params = load_model()
+    models, function, params = load_model(args.model_path, args.model_name)
     # trans_lengths = [8, 15, 60, 120]
 
     trans_lengths = [30]
@@ -758,6 +765,15 @@ def duration_test():
             print(format("6.3f", key, [res_contact[(key, n)] for n in trans_lengths]))
 
 if __name__ == '__main__':
-    benchmarks()
+    parser = ArgumentParser()
+    parser.add_argument("--model_path", type=str, default="./results/Transitionv2_style100/myResults/117/m_save_model_205")
+    parser.add_argument("--model_name", type=str, default="Transition")
+    parser.add_argument("--duration_test", action="store_true")
+    args = parser.parse_args()
+
+    if args.duration_test:
+        duration_test(args)
+    else:
+        benchmarks(args)
 
     # duration_test()
